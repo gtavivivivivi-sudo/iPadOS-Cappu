@@ -146,6 +146,8 @@ void shim_main(uint64_t dtb)
 	out_kv("ISAR0.atomics", (rsr("id_aa64isar0_el1") >> 20) & 0xf);	/* 2 = LSE present, 0 = none */
 	out_kv("PFR0", rsr("id_aa64pfr0_el1"));
 	out_kv("MMFR0", rsr("id_aa64mmfr0_el1"));
+	out_kv("MMFR1", rsr("id_aa64mmfr1_el1"));
+	out_kv("MMFR1.pan", (rsr("id_aa64mmfr1_el1") >> 20) & 0xf);	/* 0 = no PAN, 1/2 = PAN present (xnu patch 0083 v3 needs this) */
 	out_kv("CNTFRQ", rsr("cntfrq_el0"));
 
 	dump_node(dtb, "chosen");
