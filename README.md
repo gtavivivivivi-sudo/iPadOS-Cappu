@@ -1,6 +1,6 @@
 # iPadOS-Cappu
 
-### Настоящая iPadOS 16.6.1 на китайском планшете за $40, который Google официально не считает "безопасным устройством"
+### Настоящая iPadOS 16.6.1 на Mi Pad 3
 
 [![Status](https://img.shields.io/badge/status-ALPHA-orange)](mipad3/docs/roadmap.md)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-blue)](LICENSE)
