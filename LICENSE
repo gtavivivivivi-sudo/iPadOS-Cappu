@@ -1,21 +1,45 @@
-MIT License
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
-Copyright (c) 2026 dipa-studio
+Copyright (c) 2026 the iPadOS-Cappu project and contributors.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This work (the original code and documentation of this repository, not the
+third-party components it builds against or patches — see "Third-party
+components" below) is licensed under the Creative Commons
+Attribution-NonCommercial 4.0 International License.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+In short, you are free to:
+  - Use, copy, modify, and share this work, and build on it, for any
+    PERSONAL or NON-COMMERCIAL purpose.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Under the following terms:
+  - Attribution — you must give appropriate credit to the original author,
+    provide a link to this repository, and indicate if changes were made.
+    You may not imply the original author endorses you or your use.
+  - NonCommercial — you may not use this work, or anything derived from it,
+    for commercial purposes. This includes selling it, selling access to it,
+    or selling a device, image, or service built on it.
+  - No additional restrictions — you may not apply legal terms or
+    technological measures that legally restrict others from doing anything
+    this license permits.
+
+This is a human-readable summary of (and not a substitute for) the full
+legal code, available at:
+  https://creativecommons.org/licenses/by-nc/4.0/legalcode
+
+This is not a traditional open-source software license (it is a Creative
+Commons license, more commonly used for non-software works), is not
+OSI-approved, and comes with no warranty of any kind. It was chosen because
+it directly matches what the author asked for: free personal/non-commercial
+use and reuse, with mandatory attribution, and no commercial use. If you
+need a more conventional software license for your own fork, ask the author
+first.
+
+Third-party components:
+This repository patches and builds against Apple's publicly released XNU
+kernel sources (https://github.com/apple-oss-distributions/xnu), which are
+licensed separately by Apple under the APSL. It also borrows the general
+approach of dipa-studio/ios-sweet (MIT licensed) and references
+ry-diffusion/Bergamota. None of those projects' own licenses are changed or
+overridden by this file; this LICENSE applies only to the original work
+in this repository (the shim, the patches as authored here, the tooling,
+and the documentation).
