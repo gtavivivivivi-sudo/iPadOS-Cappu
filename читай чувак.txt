@@ -1,0 +1,33 @@
+built E:\iPadOS-Cappu\shim\mt8176\out\Image (12145 bytes, plat=qemu-virt)
+running QEMU (cortex-a72, GICv2), exits by itself...
+
+
+iPadOS-Cappu shim M1, plat=qemu-virt
+dtb = 0x0000000048000000
+fb = 0x0000000000000000
+blob0 = 0x0000000000000000
+bloblen = 0x0000000000000000
+CurrentEL = 0x0000000000000004
+MIDR = 0x00000000410fd083
+MPIDR = 0x0000000080000000
+ISAR0 = 0x0000000000011120
+ISAR0.atomics = 0x0000000000000000
+PFR0 = 0x0000000000000022
+MMFR0 = 0x0000000000001124
+CNTFRQ = 0x0000000003b9aca0
+-- /chosen
+stdout-path [000f] /pl011@9000000
+rng-seed [0020] e39c753a7da82ca0c41bfa9d4f92662cc3c02bfc5ebd44193f51e532c11f4232
+kaslr-seed [0008] 633ec3594bfba0e5
+-- /memory
+reg [0010] 00000000400000000000000040000000
+device_type [0007] memory
+GICD_TYPER = 0x0000000000000008
+irqs = 0x000000000000001a
+other = 0x0000000000000000
+last = 0x000000000000001b
+RESULT: PASS
+
+QEMU result: PASS
+
+Нажми Enter, чтобы вернуться в меню...

@@ -1,0 +1,106 @@
+{
+  "_note": "Сверено с реальным деревом iPad7,11 (j171ap, iPadOS 16.6.1 20G81) 2026-11-12. verified = видел в настоящем дереве; derived = по аналогии; guess = предположение.",
+  "device_tree": {
+    "root": {
+      "model": {
+        "value": "iPad7,11",
+        "confidence": "verified",
+        "note": "root model в j171ap.adt"
+      },
+      "target-type": {
+        "value": "J171",
+        "confidence": "verified",
+        "note": "root target-type; target-sub-type J171AP"
+      }
+    },
+    "product": {
+      "artwork-device-idiom": {
+        "value": "pad",
+        "confidence": "verified",
+        "note": "pad, из j171ap"
+      },
+      "artwork-scale-factor": {
+        "value": 2,
+        "confidence": "verified",
+        "note": "из j171ap"
+      },
+      "artwork-device-subtype": {
+        "value": 0,
+        "confidence": "verified",
+        "note": "у настоящего iPad 7 равен 0 (догадка 2048 была неверной)"
+      },
+      "graphics-featureset-class": {
+        "value": "APPLE3",
+        "confidence": "verified",
+        "note": "из j171ap; fallbacks APPLE3v1:APPLE2:APPLE1:GLES2,0 (догадка MTL3,2 была неверной)"
+      },
+      "compatible-device-fallback": {
+        "value": "iPad7,5",
+        "confidence": "verified",
+        "note": "из j171ap"
+      }
+    },
+    "buttons": {
+      "home-button-type": {
+        "value": 2,
+        "confidence": "verified",
+        "note": "в настоящем j171ap ключа НЕТ (физическая кнопка Home, по умолчанию 0); 2 = без кнопки, добавляет mkadt"
+      }
+    },
+    "chosen": {
+      "display-scale": {
+        "value": 2,
+        "confidence": "guess",
+        "note": "у ios-sweet для iPhone X стоит 3"
+      }
+    },
+    "remove": [
+      "Удалять нечего: island-notch-location, oled-display, burnin-mitigation в j171ap отсутствуют",
+      "baseband/Face ID узлов в /product нет; SoC-узлы (cpus, arm-io, ufs) всё ещё Snapdragon, их переделывать под MT8176"
+    ]
+  },
+  "mobilegestalt": {
+    "_note": "значения подставить в кэш MobileGestalt образа до первой загрузки (как делают твики Dynamic Island на iPhone)",
+    "DeviceClassNumber": {
+      "value": 3,
+      "confidence": "verified",
+      "note": "enum MGDeviceClass в MobileGestalt.h: iPhone=1, iPod=2, iPad=3, AppleTV=4, Watch=6; 0 в enum нет (заголовок 2013-2014)"
+    },
+    "HomeButtonType": {
+      "value": 2,
+      "confidence": "verified",
+      "note": "читается из /buttons home-button-type"
+    },
+    "ArtworkDeviceSubType": {
+      "value": 0,
+      "confidence": "verified",
+      "note": "как artwork-device-subtype"
+    },
+    "DeviceClass": {
+      "value": "iPad",
+      "confidence": "derived",
+      "note": "строка к DeviceClassNumber"
+    },
+    "ProductType": {
+      "value": "iPad7,11",
+      "confidence": "verified",
+      "note": "см. device_tree.root.model"
+    },
+    "HWModelStr": {
+      "value": "J171AP",
+      "confidence": "verified",
+      "note": "target-sub-type J171AP"
+    },
+    "HardwarePlatform": {
+      "value": "t8010",
+      "confidence": "derived",
+      "note": "A10: arm-io t8010 в дереве iPhone 7"
+    },
+    "HasBaseband": {
+      "value": false,
+      "confidence": "derived",
+      "note": "Wi-Fi версия; ключ есть в MobileGestalt.h"
+    },
+    "_check": "после загрузки спросить систему через MGCopyAnswer: DeviceClassNumber, ProductType, HWModelStr, HardwarePlatform, BoardId, ChipID, CPUArchitecture, HasBaseband. Старый заголовок не знает HomeButtonType и ArtworkDeviceSubType (они новее), их брать из деревьев."
+  }
+}

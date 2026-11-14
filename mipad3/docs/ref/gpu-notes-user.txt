@@ -1,0 +1,19 @@
+https://github.com/ry-diffusion/Bergamota !!! 
+this is ios 18 (iPhone xr ipsw)
+but interesting part is: GPU acceleration on the Adreno 630 (OpenGL ES over Mesa freedreno, then Metal)
+maybe this is what i need? cuz powervr driver(vulkan) + zink = opengl and then somehow metal?
+we are based on https://github.com/dipa-studio/ios-sweet
+so...?
+also https://asahilinux.org/2022/11/tales-of-the-m1-gpu/
+!!! this is useful do not delete this file bro
+
+also https://github.com/joranv1/ios-sailfish
+
+- GPU acceleration on the Adreno 530: CoreAnimation's own OpenGL ES renderer runs on Mesa's freedreno driver, through our own kernel GPU driver.
+
+maybe useful too
+and... WHO THE FUCK JUST TEXTED ME ON DISCORD, ONE SEC
+okay ill continue, 🤣 btw "Built on Apple's open-source releases (xnu, IOHIDFamily, libpthread, hfs), BearSSL, blacktop/darwin-xnu-build, ipsw, Qualcomm/Xiaomi's published Linux kernel sources for the hardware details, and OrangeFox Recovery. iOS itself is Apple's and is not distributed here." (from https://github.com/dipa-studio/ios-sweet)
+
+so... OrangeFox? maybe something useful, idk
+um im gonna stop writing here cuz i dont know what else to type 🤓☝️
