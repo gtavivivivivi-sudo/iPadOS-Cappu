@@ -1,15 +1,27 @@
 cappu: build XNU for ARMv8.0 (Cortex-A72 of the MT8176), no LSE atomics
 
-The CAPPU machine config inherited -march=armv8.2-a+crypto from the Snapdragon port. With it the
-compiler emits LSE atomics (LDADD/SWP/CAS...) and the hand-written asm takes its ARMv8.2 branches.
-A Cortex-A72 is ARMv8.0 and has no LSE, so the first atomic would be an undefined instruction.
-Found by tools/scan_lse.py on the Actions build: 865 LSE instruction words in kernel.development.cappu.
+v2 (2026-11-14): the first version of this patch used -march=armv8-a+crypto and only dropped
+865 -> 863 LSE words (exactly the 2 manual `casa` fixed below; everything else was untouched).
+Root cause, confirmed on a real clang (18) against the arm64-apple-macos11 target: clang ignores
+-march for LSE on the Apple/Darwin triple and always takes LSE from the default CPU unless an
+explicit -mcpu is given. -mcpu=cortex-a72 does the right thing (verified: objdump shows ldaxr/stxr,
+no casal/ldaddal, and -target-feature list has no +lse; it also implies +aes/+crc/+sha2/+neon, the
+same crypto subset the old +crypto flag asked for, so nothing is lost there). This was checked with
+a generic clang 18, not the Xcode 15 / darwin-xnu-build toolchain the Actions runner uses - the full
+kernel build and a rescan with tools/scan_lse.py is still NOT verified.
 
-- makedefs/MakeInc.def: -march=armv8-a+crypto (crypto kept as before; whether the MT8176 A72 has it is unknown (U))
+Original (v1) problem: the CAPPU machine config inherited -march=armv8.2-a+crypto from the
+Snapdragon port. With it the compiler emits LSE atomics (LDADD/SWP/CAS...) and the hand-written
+asm takes its ARMv8.2 branches. A Cortex-A72 is ARMv8.0 and has no LSE, so the first atomic would
+be an undefined instruction. Found by tools/scan_lse.py on the Actions build: 865 LSE instruction
+words in kernel.development.cappu.
+
+- makedefs/MakeInc.def: -mcpu=cortex-a72 (whether the MT8176 A72 core has the crypto extension in
+  hardware is unknown (U); -mcpu=cortex-a72 already assumes it, as the removed +crypto flag did)
 - osfmk/arm/commpage/commpage_asm.s: the two unconditional `casa` in _pfz_trylock_and_enqueue/_dequeue get an
   ldaxr/stxr fallback under #if !defined(__ARM_ARCH_8_2__). machine_routines_asm.s is already guarded by that macro.
-Verified here only: the fallback assembles under -march=armv8-a (clang), plain `casa` is rejected there.
-NOT verified: the full XNU build with the new flag (needs the Actions macOS runner), then rescan with tools/scan_lse.py.
+  Verified: -mcpu=cortex-a72 does not define __ARM_ARCH_8_2__, so this fallback branch is the one taken; no
+  further change needed here.
 
 diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
 index 9695f88..98ad3a2 100644
@@ -20,7 +32,7 @@ index 9695f88..98ad3a2 100644
  MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a
  MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837
 -MACHINE_FLAGS_ARM64_CAPPU = -DARM64_BOARD_CONFIG_CAPPU                -march=armv8.2-a+crypto
-+MACHINE_FLAGS_ARM64_CAPPU = -DARM64_BOARD_CONFIG_CAPPU                -march=armv8-a+crypto
++MACHINE_FLAGS_ARM64_CAPPU = -DARM64_BOARD_CONFIG_CAPPU                -mcpu=cortex-a72
  
  
  #
