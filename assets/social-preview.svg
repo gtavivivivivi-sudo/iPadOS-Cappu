@@ -1,0 +1,25 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2a1b6e"/><stop offset="55%" stop-color="#124a7a"/><stop offset="100%" stop-color="#0f7a74"/></linearGradient>
+    <radialGradient id="gA" cx="0.85" cy="0.1" r="0.55"><stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.55"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gB" cx="0.1" cy="1" r="0.6"><stop offset="0%" stop-color="#22d3ee" stop-opacity="0.45"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gC" cx="0.6" cy="1.05" r="0.35"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.30"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="1"/></pattern>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/><rect width="1280" height="640" fill="url(#gA)"/><rect width="1280" height="640" fill="url(#gB)"/>
+  <rect width="1280" height="640" fill="url(#gC)"/><rect width="1280" height="640" fill="url(#grid)"/>
+  <rect width="1280" height="8" fill="url(#bar)"/><rect y="632" width="1280" height="8" fill="url(#bar)"/>
+  <g transform="translate(90,200)">
+    <rect width="240" height="240" rx="18" fill="rgba(255,255,255,0.06)" stroke="#a5b4fc" stroke-width="4"/>
+    <rect x="38" y="38" width="164" height="164" rx="10" fill="rgba(10,20,50,0.55)" stroke="#7ff5d0" stroke-width="3"/>
+    <text x="120" y="126" font-family="DejaVu Sans Mono,Consolas,monospace" font-size="30" fill="#7ff5d0" text-anchor="middle">MT8176</text>
+    <text x="120" y="158" font-family="DejaVu Sans Mono,Consolas,monospace" font-size="20" fill="#c3cdea" text-anchor="middle">ARMv8.0</text>
+    <g stroke="#a5b4fc" stroke-width="4" stroke-linecap="round"><line x1="-28" y1="48" x2="0" y2="48"/><line x1="240" y1="48" x2="268" y2="48"/><line x1="48" y1="-28" x2="48" y2="0"/><line x1="48" y1="240" x2="48" y2="268"/><line x1="-28" y1="96" x2="0" y2="96"/><line x1="240" y1="96" x2="268" y2="96"/><line x1="96" y1="-28" x2="96" y2="0"/><line x1="96" y1="240" x2="96" y2="268"/><line x1="-28" y1="144" x2="0" y2="144"/><line x1="240" y1="144" x2="268" y2="144"/><line x1="144" y1="-28" x2="144" y2="0"/><line x1="144" y1="240" x2="144" y2="268"/><line x1="-28" y1="192" x2="0" y2="192"/><line x1="240" y1="192" x2="268" y2="192"/><line x1="192" y1="-28" x2="192" y2="0"/><line x1="192" y1="240" x2="192" y2="268"/></g>
+  </g>
+  <g font-family="DejaVu Sans Mono,Consolas,monospace">
+    <text x="400" y="300" font-size="88" font-weight="bold" fill="#ffffff">iPadOS-Cappu</text>
+    <text x="404" y="362" font-size="32" fill="#7ff5d0">настоящая iPadOS 16.6.1 на Xiaomi Mi Pad 3</text>
+    <text x="404" y="410" font-size="22" fill="#c3cdea">XNU 8796 (patched) + userland Apple без изменений</text><text x="404" y="444" font-size="22" fill="#c3cdea">+ свой boot-шим</text>
+  </g>
+</svg>

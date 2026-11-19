@@ -1,0 +1,204 @@
+From: iPadOS-Cappu <noreply@localhost>
+Subject: [PATCH] cappu: MT8176 UART0 serial driver (FocalTech-style register probe via device tree)
+
+Registers a pe_serial_functions backend for UART0 (0x11002000) following the
+existing cappu-fbcon pattern in pexpert/arm/pe_serial.c. Register layout
+(16550-compatible core + MTK HIGHS/SAMPLE_COUNT/SAMPLE_POINT/FRACDIV extras)
+confirmed against the public mainline Linux 8250_mtk.c driver; 921600 baud
+divisor/fraction values hand-computed for the documented 26 MHz UART clock
+to match Android's own ttyMT0 console rate. Full V/U breakdown in NOTES.md.
+Real-device only: the device tree node (cappu-uart0) is omitted from the
+QEMU build so the diagnostic shim's one verified boot path doesn't probe
+unmapped MMIO.
+
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+index 6fd1719..d87dc0e 100644
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -842,6 +842,164 @@ fbcon_probe(void)
+ 	}
+ }
+ 
++/*
++ * MT8176 UART0 (0x11002000): MTK 16550-compatible core, confirmed register
++ * layout from the public mainline Linux driver (drivers/tty/serial/8250/
++ * 8250_mtk.c, regshift=2): standard 16550 regs at word offsets 0x00 (THR/
++ * RBR), 0x04 (IER), 0x08 (FCR/IIR), 0x0C (LCR), 0x10 (MCR), 0x14 (LSR),
++ * 0x18 (MSR), 0x1C (SCR); MTK extras HIGHS=0x24, SAMPLE_COUNT=0x28,
++ * SAMPLE_POINT=0x2C, RATE_FIX=0x34, FRACDIV_L=0x54, FRACDIV_M=0x58 (V,
++ * from that source; NOT re-verified against the actual Xiaomi cappu dts
++ * node for this exact UART instance - the dts was only read for UART0's
++ * base address/IRQ/clock/pinmux in mipad3/config/hardware-mt8176.md).
++ *
++ * Baud 921600 (matches the Android console "ttyMT0 921600n1" already
++ * recorded in hardware-mt8176.md) at the documented 26 MHz UART clock:
++ * divisor quot=1 (DLL=1, DLM=0), HIGHS=3 (>=115200 path), SAMPLE_COUNT=27
++ * (0x1b), SAMPLE_POINT=12 (0x0c), fraction index 2 -> FRACDIV_L=0x05,
++ * FRACDIV_M=0x00. Computed by hand from the driver's own formula, not
++ * read off hardware - mark the whole baud setup (U) until confirmed with
++ * a real terminal on the wire.
++ *
++ * Does NOT touch any clock gate for UART0: LK/preloader already uses this
++ * UART as the Android console, so by the time XNU runs the clock should
++ * already be on (same reasoning as brick-safety.md's UART note). Pinmux
++ * (GPIO113=RX, GPIO114=TX, MT_PINCTRL_PA 0x10005000 mode reg, 3 bits/pin)
++ * IS set defensively; worst case it rewrites the same function LK already
++ * set. Function number 1 for the UART alt-function is a guess by analogy
++ * with the I2C pins in cappu_touch_mt8176.c (U, not confirmed for UART).
++ */
++#define CAPPU_UART0_PA        0x11002000u
++#define CAPPU_UART_THR        0x00u
++#define CAPPU_UART_RBR        0x00u
++#define CAPPU_UART_IER        0x04u
++#define CAPPU_UART_FCR        0x08u
++#define CAPPU_UART_LCR        0x0Cu
++#define CAPPU_UART_MCR        0x10u
++#define CAPPU_UART_LSR        0x14u
++#define CAPPU_UART_HIGHS      0x24u
++#define CAPPU_UART_SAMPLE_CNT 0x28u
++#define CAPPU_UART_SAMPLE_PT  0x2Cu
++#define CAPPU_UART_RATE_FIX   0x34u
++#define CAPPU_UART_FRACDIV_L  0x54u
++#define CAPPU_UART_FRACDIV_M  0x58u
++#define CAPPU_UART_LCR_DLAB   0x80u
++#define CAPPU_UART_LCR_8N1    0x03u
++#define CAPPU_UART_LSR_DR     0x01u
++#define CAPPU_UART_LSR_THRE   0x20u
++#define CAPPU_UART_FCR_FIFO_EN_CLR 0x07u
++
++#define CAPPU_UART_PINCTRL_PA 0x10005000u
++#define CAPPU_UART_RX_PIN     113u
++#define CAPPU_UART_TX_PIN     114u
++#define CAPPU_UART_PINMUX_FN  1u      /* (U) see block comment above */
++
++static volatile uint8_t *cappu_uart0_base = NULL;
++
++static inline uint8_t
++cappu_uart_rd(uint32_t off)
++{
++	return *(volatile uint8_t *)(cappu_uart0_base + off);
++}
++
++static inline void
++cappu_uart_wr(uint32_t off, uint8_t v)
++{
++	*(volatile uint8_t *)(cappu_uart0_base + off) = v;
++}
++
++static void
++cappu_uart0_pinmux(void)
++{
++	vm_offset_t pin = ml_io_map(CAPPU_UART_PINCTRL_PA, 0x1000);
++	if (pin == 0) {
++		return;
++	}
++	for (unsigned i = 0; i < 2; i++) {
++		uint32_t gpio = (i == 0) ? CAPPU_UART_RX_PIN : CAPPU_UART_TX_PIN;
++		uint32_t reg_off = 0x600u + (gpio / 5u) * 0x10u;
++		uint32_t bit = (gpio % 5u) * 3u;
++		volatile uint32_t *mode = (volatile uint32_t *)(pin + reg_off);
++		uint32_t m = *mode;
++		m &= ~(7u << bit);
++		m |= (CAPPU_UART_PINMUX_FN & 7u) << bit;
++		*mode = m;
++	}
++	__asm__ volatile ("dsb sy" ::: "memory");
++}
++
++static void
++cappu_uart0_init(void)
++{
++	if (cappu_uart0_base == NULL) {
++		return;
++	}
++	cappu_uart_wr(CAPPU_UART_LCR, CAPPU_UART_LCR_DLAB);
++	cappu_uart_wr(CAPPU_UART_THR, 1);    /* DLL: quot=1 for 921600 @ 26 MHz */
++	cappu_uart_wr(CAPPU_UART_IER, 0);    /* DLM */
++	cappu_uart_wr(CAPPU_UART_LCR, CAPPU_UART_LCR_8N1);
++	cappu_uart_wr(CAPPU_UART_HIGHS, 3);
++	cappu_uart_wr(CAPPU_UART_SAMPLE_CNT, 27);
++	cappu_uart_wr(CAPPU_UART_SAMPLE_PT, 12);
++	cappu_uart_wr(CAPPU_UART_FRACDIV_L, 0x05);
++	cappu_uart_wr(CAPPU_UART_FRACDIV_M, 0x00);
++	cappu_uart_wr(CAPPU_UART_RATE_FIX, 0);
++	cappu_uart_wr(CAPPU_UART_FCR, CAPPU_UART_FCR_FIFO_EN_CLR);
++	cappu_uart_wr(CAPPU_UART_MCR, 0);
++}
++
++static unsigned int
++cappu_uart0_transmit_ready(void)
++{
++	return cappu_uart_rd(CAPPU_UART_LSR) & CAPPU_UART_LSR_THRE;
++}
++
++static void
++cappu_uart0_transmit_data(uint8_t c)
++{
++	cappu_uart_wr(CAPPU_UART_THR, c);
++}
++
++static unsigned int
++cappu_uart0_receive_ready(void)
++{
++	return cappu_uart_rd(CAPPU_UART_LSR) & CAPPU_UART_LSR_DR;
++}
++
++static uint8_t
++cappu_uart0_receive_data(void)
++{
++	return cappu_uart_rd(CAPPU_UART_RBR);
++}
++
++SECURITY_READ_ONLY_LATE(static struct pe_serial_functions) cappu_uart0_serial_functions =
++{
++	.init = cappu_uart0_init,
++	.transmit_ready = cappu_uart0_transmit_ready,
++	.transmit_data = cappu_uart0_transmit_data,
++	.receive_ready = cappu_uart0_receive_ready,
++	.receive_data = cappu_uart0_receive_data,
++	.device = SERIAL_CAPPU_UART0
++};
++
++static void
++cappu_uart0_probe(void)
++{
++	DTEntry entry;
++	uint64_t const *reg;
++	unsigned int size;
++
++	if (SecureDTFindEntry("name", "cappu-uart0", &entry) != kSuccess ||
++	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) != kSuccess || size < 16) {
++		return;
++	}
++	cappu_uart0_pinmux();
++	cappu_uart0_base = (volatile uint8_t *)ml_io_map((vm_offset_t)reg[0], (vm_size_t)reg[1]);
++	if (cappu_uart0_base != NULL) {
++		register_serial_functions(&cappu_uart0_serial_functions);
++	}
++}
++
+ #if HIBERNATION
+ /**
+  * Transitions the serial driver into a mode that can be run in the hibernation
+@@ -923,6 +1081,7 @@ serial_init(void)
+ 	PE_parse_boot_argn("disable-uart-irq", &disable_uart_irq, sizeof(disable_uart_irq));
+ 
+ 	fbcon_probe();
++	cappu_uart0_probe();
+ 
+ #ifdef PI3_UART
+ 	if (SecureDTFindEntry("name", "gpio", &entryP) == kSuccess) {
+diff --git a/pexpert/pexpert/arm/protos.h b/pexpert/pexpert/arm/protos.h
+index e8cba61..cb6aca4 100644
+--- a/pexpert/pexpert/arm/protos.h
++++ b/pexpert/pexpert/arm/protos.h
+@@ -54,7 +54,8 @@ typedef enum serial_device {
+ 	SERIAL_PI3_UART=0x4,
+ 	SERIAL_VMAPPLE_UART=0x8,
+ 	SERIAL_DCC_UART=0x10,
+-	SERIAL_CAPPU_FBCON=0x20
++	SERIAL_CAPPU_FBCON=0x20,
++	SERIAL_CAPPU_UART0=0x40
+ } serial_device_t;
+ 
+ kern_return_t serial_irq_enable(serial_device_t device);

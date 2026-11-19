@@ -1,0 +1,392 @@
+From: iPadOS-Cappu <noreply@localhost>
+Subject: [PATCH] cappu: MT8176 touch driver (FocalTech FT5x46, I2C0 0x38), replaces Redmi GT9896
+
+Full rationale, hardware facts (V) vs unverified bits (U), and the standalone
+aarch64 compile check are in NOTES.md ("touch driver"/"cappu_touch_mt8176.c").
+Short version: the Redmi driver (bsd/dev/cappu_touch.c) used Snapdragon GENI
+I2C + SPMI PMIC keys, none of which exist on MT8176. This is a from-scratch
+polling driver for the actual chip (FT5x46 over the MediaTek I2C0 block,
+GPIO45/46 pinmux, FT5x06-family touch report). PMIC power/reset sequencing
+for the touch rails is NOT done yet (documented in the driver header); if the
+probe NACKs on real hardware, that is the first suspect. Also updates
+CappuHID.cpp's hardcoded 1080x2436 (Redmi) panel geometry to the Mi Pad 3's
+real 1536x2048 panel.
+
+diff --git a/bsd/conf/files b/bsd/conf/files
+index a6a4789..1d8920f 100644
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -107,7 +107,7 @@ bsd/dev/memdev.c			standard
+ bsd/dev/cappu_ufs.c			standard
+ bsd/dev/cappu_sample.c			standard
+ bsd/dev/cappu_keys.c			standard
+-bsd/dev/cappu_touch.c			standard
++bsd/dev/cappu_touch_mt8176.c		standard
+ bsd/dev/cappu_rpmh.c			standard
+ bsd/dev/cappu_spmi.c			standard
+ bsd/dev/cappu_usb.c			standard
+diff --git a/bsd/dev/cappu_touch_mt8176.c b/bsd/dev/cappu_touch_mt8176.c
+new file mode 100644
+index 0000000..4b9f910
+--- /dev/null
++++ b/bsd/dev/cappu_touch_mt8176.c
+@@ -0,0 +1,297 @@
++/*
++ * Mi Pad 3 (MT8176) touch: FocalTech FT5x46 on I2C0 (0x38), polled.
++ * Replaces the Redmi GENI/GT9896 driver (bsd/dev/cappu_touch.c, no longer built).
++ *
++ * Facts from the Xiaomi cappu kernel (V): I2C0 at 0x11007000, peri clock gate
++ * CLR reg 0x10003010 bit 23, SDA0/SCL0 = GPIO45/46 mode 1 (mode reg
++ * 0x10005690, 3 bits per pin), FT5x46 at 0x38, panel 1536x2048.
++ * NOT verified on hardware (U): FIFO mode on this I2C block (the Linux driver
++ * always uses DMA), the I2C parent clock rate (timing is a boot-arg), and
++ * that the touch rails (PMIC VGP4/VGP6) and reset line (PMIC GPIO12) are
++ * already on: this driver does NOT touch the PMIC yet. If the probe is NACKed,
++ * that is the first suspect.
++ * boot-args: capputouch=0 disables; capputouchi2ctiming=<TIMING reg value>.
++ */
++#if defined(ARM64_BOARD_CONFIG_CAPPU)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern kern_return_t thread_terminate(thread_t);
++extern void cappu_hid_touch(int finger, int down, int x, int y);
++void cappu_touch_init(void);
++
++#define MT_I2C0_PA        0x11007000u
++#define MT_PERICFG_PA     0x10003000u
++#define MT_PERI_PDN0_CLR  0x010u
++#define MT_PERI_I2C0_BIT  23
++#define MT_PINCTRL_PA     0x10005000u
++#define MT_PIN_MODE_REG   0x690u      /* 0x600 + (45/5)*0x10; pins 45,46 */
++
++#define I2C_DATA_PORT     0x00u
++#define I2C_SLAVE_ADDR    0x04u
++#define I2C_INTR_MASK     0x08u
++#define I2C_INTR_STAT     0x0cu
++#define I2C_CONTROL       0x10u
++#define I2C_TRANSFER_LEN  0x14u
++#define I2C_TRANSAC_LEN   0x18u
++#define I2C_DELAY_LEN     0x1cu
++#define I2C_TIMING        0x20u
++#define I2C_START         0x24u
++#define I2C_EXT_CONF      0x28u
++#define I2C_FIFO_ADDR_CLR 0x38u
++#define I2C_IO_CONFIG     0x40u
++#define I2C_HS            0x48u
++#define I2C_SOFTRESET     0x50u
++#define I2C_DCM_EN        0x54u
++#define I2C_TRANSFER_AUX  0x6cu
++
++#define CTL_RS            (1u << 1)
++#define CTL_CLK_EXT_EN    (1u << 3)
++#define CTL_DIR_CHANGE    (1u << 4)
++#define CTL_ACKERR_DET_EN (1u << 5)
++#define INT_COMP          (1u << 0)
++#define INT_ACKERR        (1u << 1)
++#define INT_HS_NACKERR    (1u << 2)
++#define INT_RS            (1u << 4)
++#define START_GO          (1u << 0)
++#define START_RS_MUL_TRIG (1u << 14)
++
++#define FT_ADDR           0x38u
++#define TOUCH_MAX         10u
++#define PANEL_W           1536u
++#define PANEL_H           2048u
++
++static struct {
++	vm_offset_t i2c;
++	bool started;
++	uint32_t active;
++	int x[TOUCH_MAX], y[TOUCH_MAX];
++} st;
++static int touch_sleep_chan;
++
++static inline uint16_t
++rd16(uint32_t off)
++{
++	uint16_t v = *(volatile uint16_t *)(st.i2c + off);
++	__asm__ volatile ("dmb oshld" ::: "memory");
++	return v;
++}
++
++static inline void
++wr16(uint32_t off, uint16_t v)
++{
++	__asm__ volatile ("dmb oshst" ::: "memory");
++	*(volatile uint16_t *)(st.i2c + off) = v;
++	__asm__ volatile ("dsb osh" ::: "memory");
++}
++
++static void
++touch_wait(unsigned ms)
++{
++	uint64_t deadline;
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&touch_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++/* Write 1 register byte, then read len (<= 8, FIFO depth) bytes with a repeated start. */
++static int
++touch_read(uint8_t reg, uint8_t *buf, unsigned len)
++{
++	if (len == 0 || len > 8) {
++		return EINVAL;
++	}
++	wr16(I2C_CONTROL, CTL_ACKERR_DET_EN | CTL_CLK_EXT_EN | CTL_DIR_CHANGE | CTL_RS);
++	wr16(I2C_EXT_CONF, 0x8001);
++	wr16(I2C_SLAVE_ADDR, (uint16_t)(FT_ADDR << 1));
++	wr16(I2C_INTR_STAT, INT_RS | INT_HS_NACKERR | INT_ACKERR | INT_COMP);
++	wr16(I2C_FIFO_ADDR_CLR, 1);
++	wr16(I2C_INTR_MASK, INT_RS | INT_HS_NACKERR | INT_ACKERR | INT_COMP);
++	wr16(I2C_TRANSFER_LEN, 1);
++	wr16(I2C_TRANSFER_AUX, (uint16_t)len);
++	wr16(I2C_TRANSAC_LEN, 2);
++	wr16(I2C_DATA_PORT, reg);
++	wr16(I2C_START, START_GO | START_RS_MUL_TRIG);
++	for (unsigned i = 0; i < 20000; ++i) {
++		uint16_t s = rd16(I2C_INTR_STAT);
++		if (s & (INT_ACKERR | INT_HS_NACKERR)) {
++			wr16(I2C_INTR_STAT, s);
++			wr16(I2C_SOFTRESET, 1);
++			return ENXIO;
++		}
++		if (s & INT_COMP) {
++			for (unsigned k = 0; k < len; ++k) {
++				buf[k] = (uint8_t)rd16(I2C_DATA_PORT);
++			}
++			wr16(I2C_INTR_STAT, s);
++			return 0;
++		}
++		delay(5);
++	}
++	wr16(I2C_SOFTRESET, 1);
++	return ETIMEDOUT;
++}
++
++static void
++touch_i2c_init(uint16_t timing)
++{
++	/* Same order as Linux mtk_i2c_init_hw() for mt8173 (open drain, DCM off). */
++	wr16(I2C_SOFTRESET, 1);
++	wr16(I2C_IO_CONFIG, 0x0003);
++	wr16(I2C_DCM_EN, 0);
++	wr16(I2C_TIMING, timing);
++	wr16(I2C_HS, 0);
++	wr16(I2C_CONTROL, CTL_ACKERR_DET_EN | CTL_CLK_EXT_EN);
++	wr16(I2C_DELAY_LEN, 2);
++}
++
++static void
++touch_report(uint32_t mask, const int *x, const int *y)
++{
++	for (unsigned id = 0; id < TOUCH_MAX; ++id) {
++		uint32_t bit = 1u << id;
++		if (mask & bit) {
++			if (!(st.active & bit) || x[id] != st.x[id] || y[id] != st.y[id]) {
++				cappu_hid_touch((int)id, 1, x[id], y[id]);
++			}
++			st.x[id] = x[id];
++			st.y[id] = y[id];
++		} else if (st.active & bit) {
++			cappu_hid_touch((int)id, 0, st.x[id], st.y[id]);
++		}
++	}
++	st.active = mask;
++}
++
++/*
++ * FT5x06-family map (U for this exact IC, same family as Linux edt-ft5x06):
++ * 0x02 = number of points (low 4 bits); point i at 0x03 + 6*i:
++ * [0] event<<6 | XH(4), [1] XL, [2] id<<4 | YH(4), [3] YL, [4] weight, [5] area.
++ */
++static int
++touch_poll(void)
++{
++	uint8_t hdr[8], pt[8];
++	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
++	uint32_t mask = 0;
++	int err = touch_read(0x00, hdr, 8);
++	if (err) {
++		return err;
++	}
++	unsigned n = hdr[2] & 15u;
++	if (n > TOUCH_MAX) {
++		return EIO;
++	}
++	for (unsigned i = 0; i < n; ++i) {
++		const uint8_t *p;
++		if (i == 0) {
++			p = hdr + 3;
++		} else {
++			err = touch_read((uint8_t)(0x03 + 6 * i), pt, 6);
++			if (err) {
++				return err;
++			}
++			p = pt;
++		}
++		unsigned id = p[2] >> 4, event = p[0] >> 6;
++		if (id >= TOUCH_MAX || event == 1u) {
++			continue; /* unused record / UP */
++		}
++		unsigned px = ((unsigned)(p[0] & 15u) << 8) | p[1];
++		unsigned py = ((unsigned)(p[2] & 15u) << 8) | p[3];
++		if (px >= PANEL_W || py >= PANEL_H) {
++			return EIO;
++		}
++		mask |= 1u << id;
++		x[id] = (int)px;
++		y[id] = (int)py;
++	}
++	touch_report(mask, x, y);
++	return 0;
++}
++
++static void
++touch_thread(void *arg, wait_result_t wr)
++{
++	(void)arg;
++	(void)wr;
++	int timing = 0x012a; /* ~100 kHz IF the parent clock is ~273 MHz (U); override with boot-arg */
++	(void)PE_parse_boot_argn("capputouchi2ctiming", &timing, sizeof(timing));
++	touch_wait(3000); /* let the system settle, as the old driver did */
++	vm_offset_t peri = ml_io_map(MT_PERICFG_PA, 0x1000);
++	vm_offset_t pin = ml_io_map(MT_PINCTRL_PA, 0x1000);
++	st.i2c = ml_io_map(MT_I2C0_PA, 0x1000);
++	if (!peri || !pin || !st.i2c) {
++		printf("CAPPU TOUCH: MMIO mapping failed\n");
++		goto out;
++	}
++	*(volatile uint32_t *)(peri + MT_PERI_PDN0_CLR) = 1u << MT_PERI_I2C0_BIT;
++	/* SDA0 = GPIO45 (slot 0), SCL0 = GPIO46 (slot 1) -> function 1 */
++	volatile uint32_t *mode = (volatile uint32_t *)(pin + MT_PIN_MODE_REG);
++	uint32_t m = *mode;
++	m &= ~((7u << 0) | (7u << 3));
++	m |= (1u << 0) | (1u << 3);
++	*mode = m;
++	__asm__ volatile ("dsb sy" ::: "memory");
++	touch_i2c_init((uint16_t)timing);
++	uint8_t chip = 0, vendor = 0, fw = 0;
++	int e1 = touch_read(0xa3, &chip, 1);
++	int e2 = touch_read(0xa8, &vendor, 1);
++	int e3 = touch_read(0xa6, &fw, 1);
++	printf("CAPPU TOUCH: FT5x46 probe err=%d/%d/%d chip=%02x vendor=%02x fw=%02x timing=%#x\n",
++	    e1, e2, e3, chip, vendor, fw, timing);
++	if (e1) {
++		printf("CAPPU TOUCH: no ACK at 0x38: touch rails (PMIC VGP4/VGP6) or reset likely off, "
++		    "or FIFO mode/timing wrong; stopping\n");
++		goto out;
++	}
++	printf("CAPPU TOUCH: polling 10ms, %ux%u\n", PANEL_W, PANEL_H);
++	unsigned errors = 0;
++	for (;;) {
++		int err = touch_poll();
++		if (err) {
++			if ((errors++ % 100u) == 0) {
++				printf("CAPPU TOUCH: report err=%d\n", err);
++			}
++			if (errors == 10) {
++				touch_report(0, st.x, st.y);
++			}
++		} else {
++			errors = 0;
++		}
++		touch_wait(10);
++	}
++out:
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++cappu_touch_init(void)
++{
++	int enabled = 1;
++	thread_t thread;
++	if (st.started) {
++		return;
++	}
++	st.started = true;
++	(void)PE_parse_boot_argn("capputouch", &enabled, sizeof(enabled));
++	if (!enabled) {
++		printf("CAPPU TOUCH: disabled (capputouch=0)\n");
++		return;
++	}
++	kern_return_t kr = kernel_thread_start(touch_thread, NULL, &thread);
++	if (kr == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		printf("CAPPU TOUCH: kernel_thread_start failed %d\n", kr);
++	}
++}
++#endif /* ARM64_BOARD_CONFIG_CAPPU */
+diff --git a/iokit/Kernel/arm/hid/CappuHID.cpp b/iokit/Kernel/arm/hid/CappuHID.cpp
+index 2044b18..0f975da 100644
+--- a/iokit/Kernel/arm/hid/CappuHID.cpp
++++ b/iokit/Kernel/arm/hid/CappuHID.cpp
+@@ -356,6 +356,8 @@ OSDefineMetaClassAndStructors(CappuHIDButtons, IOHIDEventService);
+  * app-switcher gesture.
+  */
+ #define CAPPU_TOUCH_EDGE_PX 48
++#define CAPPU_PANEL_W 1536	/* Mi Pad 3, 7.9" (dts x-max/y-max) */
++#define CAPPU_PANEL_H 2048
+ class CappuHIDTouch : public IOHIDEventService {
+ 	OSDeclareDefaultStructors(CappuHIDTouch);
+ public:
+@@ -434,14 +436,15 @@ CappuHIDTouch::start(IOService *provider)
+ 	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("cappufb_native", &native, sizeof(native));
+-	fLogicalW = native ? 1080 : 1125;
+-	fLogicalH = native ? 2400 : 2436;
+-	fOffX = (fLogicalW - 1080) / 2;
+-	fOffY = (fLogicalH - 2400) / 2;
++	(void)native;	/* the Mi Pad 3 presents its native 1536x2048 panel */
++	fLogicalW = CAPPU_PANEL_W;
++	fLogicalH = CAPPU_PANEL_H;
++	fOffX = 0;
++	fOffY = 0;
+ 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+-	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+-	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
++	setProperty("SurfaceWidth", (unsigned long long)(120 << 16), 32);	/* mm, 16.16 */
++	setProperty("SurfaceHeight", (unsigned long long)(160 << 16), 32);
+ 	gCappuTouch = this;
+ 	registerService();
+ 	IOLog("CAPPU HID: touch registered\n");
+@@ -458,12 +461,12 @@ CappuHIDTouch::touch(int finger, bool down, int x, int y)
+ 	if (finger < 0 || finger >= CAPPU_TOUCH_FINGERS) {
+ 		return;
+ 	}
+-	x = x < 0 ? 0 : (x > 1079 ? 1079 : x);
+-	y = y < 0 ? 0 : (y > 2399 ? 2399 : y);
++	x = x < 0 ? 0 : (x > CAPPU_PANEL_W - 1 ? CAPPU_PANEL_W - 1 : x);
++	y = y < 0 ? 0 : (y > CAPPU_PANEL_H - 1 ? CAPPU_PANEL_H - 1 : y);
+ 
+ 	IOLockLock(fLock);
+ 	bool was = fDown[finger];
+-	/* Panel pixels -> the presented 1125x2436 display (CappuFramebuffer.cpp). */
++	/* Panel pixels -> the presented display (CappuFramebuffer.cpp). */
+ 	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
+ 	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
+ 	bool moved = down && (nx != fX[finger] || ny != fY[finger]);
+@@ -472,8 +475,8 @@ CappuHIDTouch::touch(int finger, bool down, int x, int y)
+ 		return;
+ 	}
+ 	if (!was && down) {
+-		fEdge[finger] = x < CAPPU_TOUCH_EDGE_PX || x > 1079 - CAPPU_TOUCH_EDGE_PX ||
+-		    y < CAPPU_TOUCH_EDGE_PX || y > 2399 - CAPPU_TOUCH_EDGE_PX;
++		fEdge[finger] = x < CAPPU_TOUCH_EDGE_PX || x > CAPPU_PANEL_W - 1 - CAPPU_TOUCH_EDGE_PX ||
++		    y < CAPPU_TOUCH_EDGE_PX || y > CAPPU_PANEL_H - 1 - CAPPU_TOUCH_EDGE_PX;
+ 	}
+ 
+ 	collection = IOHIDEvent::digitizerEvent(now, 0, kIOHIDDigitizerTransducerTypeHand, false, 0, 0, 0);

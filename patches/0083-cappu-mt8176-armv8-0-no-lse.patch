@@ -1,0 +1,73 @@
+cappu: build XNU for ARMv8.0 core (MT8176), no LSE atomics, v5
+
+v3/v4 history and how the real remaining-12-LSE-words root cause (libfirehose_kernel.a, built by
+DXB from a separate libdispatch clone, fixed in .github/workflows/xnu.yml, not here) was found:
+see NOTES.md "LSE finding". v5 = v4 minus the CAPPU_SENTINEL_0083 diagnostic marker (its job -
+proving this file wasn't the source of those 12 words - is done, and done negatively). The actual
+fix below (unconditional ldaxr/stxr instead of casa) removes XNU's own 2 genuine LSE uses and is
+unchanged and correct regardless of the firehose finding.
+
+- makedefs/MakeInc.def: -march=armv8.1-a+crypto+nolse
+- osfmk/arm/commpage/commpage_asm.s: _pfz_trylock_and_enqueue/_dequeue always use an ldaxr/stxr
+  loop instead of casa, unconditionally (no macro check, no sentinel).
+
+diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
+index 9695f88..98ad3a2 100644
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -61,7 +61,7 @@ MACHINE_FLAGS_ARM64_T8103 = -DARM64_BOARD_CONFIG_T8103                  -mcpu=ap
+ MACHINE_FLAGS_ARM64_T6000 = -DARM64_BOARD_CONFIG_T6000 		-mcpu=apple-a14
+ MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a
+ MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837
+-MACHINE_FLAGS_ARM64_CAPPU = -DARM64_BOARD_CONFIG_CAPPU                -march=armv8.2-a+crypto
++MACHINE_FLAGS_ARM64_CAPPU = -DARM64_BOARD_CONFIG_CAPPU                -march=armv8.1-a+crypto+nolse
+
+
+ #
+diff --git a/osfmk/arm/commpage/commpage_asm.s b/osfmk/arm/commpage/commpage_asm.s
+index da0bbba..7f9c6a1 100644
+--- a/osfmk/arm/commpage/commpage_asm.s
++++ b/osfmk/arm/commpage/commpage_asm.s
+@@ -273,7 +273,21 @@
+ 	mov		w11, #1			 // locked value = w11 = 1
+
+ 	// Try to grab the lock
+-	casa	w10, w11, [x3]	 // Atomic CAS with acquire barrier
++	/*
++	 * Cortex-A72 (MT8176) has no LSE: same acquire CAS done with an exclusive
++	 * loop. Unconditional on purpose - the CAPPU machine config is only ever
++	 * built for this tablet, never real Apple hardware, so there is no case
++	 * where taking the LSE path here would be correct, and __ARM_ARCH_8_2__
++	 * is not a flag we can trust the toolchain to leave undefined for us.
++	 * w10 = old value, w12 = scratch.
++	 */
++1:	ldaxr	w10, [x3]
++	cbnz	w10, 2f
++	stxr	w12, w11, [x3]
++	cbnz	w12, 1b
++	b	3f
++2:	clrex
++3:
+ 	cbz		w10, Ltrylock_enqueue_success
+
+ 	mov		x0, #-1			// Failed
+@@ -323,7 +337,18 @@
+ 	mov		w10, wzr		 // unlock value = w10 = 0
+ 	mov		w11, #1			 // locked value = w11 = 1
+
+-	casa	w10, w11, [x2]	 // Atomic CAS with acquire barrier
++	/*
++	 * Cortex-A72 (MT8176) has no LSE: same acquire CAS done with an exclusive
++	 * loop, unconditional - see _pfz_trylock_and_enqueue above for why.
++	 * w10 = old value, w12 = scratch.
++	 */
++1:	ldaxr	w10, [x2]
++	cbnz	w10, 2f
++	stxr	w12, w11, [x2]
++	cbnz	w12, 1b
++	b	3f
++2:	clrex
++3:
+ 	cbz		w10, Ltrylock_dequeue_success
+
+ 	mov		x0, #-1			// Failed

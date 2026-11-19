@@ -1,0 +1,165 @@
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index 1cac36a..45eb999 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -42,6 +42,7 @@
+ #include <arm64/proc_reg.h>
+ #include <arm64/lowglobals.h>
+ #include <arm64/cappu_early.h>
++#include <arm64/cappu_fbparams.h>
+ #include <arm/cpu_data_internal.h>
+ #include <arm/misc_protos.h>
+ #include <pexpert/arm64/boot.h>
+@@ -1836,6 +1837,9 @@ init_ptpages(tt_entry_t *tt, vm_map_address_t start, vm_map_address_t end, bool
+ static void
+ cappu_early_map_final(void)
+ {
++	if (CAPPU_EARLY_FB_PHYS == 0) {
++		return;     /* early console disabled: map nothing */
++	}
+ 	const vm_map_address_t va = CAPPU_EARLY_FB_VA;
+ 	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
+ 	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
+@@ -1843,7 +1847,7 @@ cappu_early_map_final(void)
+ 	tt_entry_t *l2 = (tt_entry_t *)phystokv(l1 & ARM_TTE_TABLE_MASK);
+ 	tt_entry_t *slot = &l2[(va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
+ 	assert(*slot == ARM_TTE_EMPTY);
+-	*slot = 0x9c000000ULL | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
++	*slot = (uint64_t)CAPPU_EARLY_FB_BLOCK | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
+ 	    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
+ 	    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
+ 	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
+@@ -2190,7 +2194,7 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 
+ #if defined(CAPPU)
+ 	/* The final TTBR1 is live; leave the outgoing VA=PA framebuffer alias. */
+-	cappu_early_relocate(CAPPU_EARLY_FB_VA);
++	cappu_early_relocate(CAPPU_EARLY_FB_VA + CAPPU_EARLY_FB_OFF);
+ #endif
+ 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+ 
+diff --git a/osfmk/arm64/cappu_early.c b/osfmk/arm64/cappu_early.c
+index a745d30..2645d37 100644
+--- a/osfmk/arm64/cappu_early.c
++++ b/osfmk/arm64/cappu_early.c
+@@ -6,16 +6,17 @@
+  * retain this console until the normal framebuffer serial console is ready.
+  */
+ #include <arm64/cappu_early.h>
++#include <arm64/cappu_fbparams.h>
+ 
+ #if defined(CAPPU)
+ #include <stdint.h>
+ #include <kern/misc_protos.h>
+ 
+-static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
++static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)CAPPU_EARLY_FB_PHYS;
+ #define EARLY_FB early_fb
+-#define EARLY_WIDTH 1080u
+-#define EARLY_HEIGHT 2400u
+-#define EARLY_STRIDE (4320u / 4)
++#define EARLY_WIDTH ((unsigned int)CAPPU_EARLY_FB_WIDTH)
++#define EARLY_HEIGHT ((unsigned int)CAPPU_EARLY_FB_HEIGHT)
++#define EARLY_STRIDE ((unsigned int)CAPPU_EARLY_FB_STRIDE / 4u)
+ #define EARLY_SCALE 2u
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+@@ -42,7 +43,7 @@ cappu_early_clear_row(void)
+ void
+ cappu_early_putc(char c)
+ {
+-	if (early_disabled) {
++	if (early_disabled || CAPPU_EARLY_FB_PHYS == 0) {
+ 		return;
+ 	}
+ 	if (!early_started) {
+diff --git a/osfmk/arm64/cappu_fbparams.h b/osfmk/arm64/cappu_fbparams.h
+new file mode 100644
+index 0000000..7aba2bf
+--- /dev/null
++++ b/osfmk/arm64/cappu_fbparams.h
+@@ -0,0 +1,38 @@
++/*
++ * Early (bootstrap) framebuffer parameters for the Mi Pad 3 (MT8176).
++ * Included from C and from assembly: only plain #defines here.
++ *
++ * CAPPU_EARLY_FB_PHYS = 0 disables the whole early console (no write to
++ * RAM, no extra mapping). The old Redmi value 0x9c000000 is ordinary DRAM
++ * on MT8176, writing there corrupts memory. Set the real address only after
++ * the M1 shim has printed /chosen atag,videolfb from the tablet:
++ *   -DCAPPU_EARLY_FB_PHYS=0x........ (U: format must be 32bpp, stride may differ)
++ *
++ * The mapping is one 32MB L2 block, so the block base is PHYS rounded down
++ * to 32MB and the framebuffer sits at OFF inside it.
++ */
++#ifndef _ARM64_CAPPU_FBPARAMS_H_
++#define _ARM64_CAPPU_FBPARAMS_H_
++
++#ifndef CAPPU_EARLY_FB_PHYS
++#define CAPPU_EARLY_FB_PHYS     0
++#endif
++#ifndef CAPPU_EARLY_FB_WIDTH
++#define CAPPU_EARLY_FB_WIDTH    1536
++#endif
++#ifndef CAPPU_EARLY_FB_HEIGHT
++#define CAPPU_EARLY_FB_HEIGHT   2048
++#endif
++#ifndef CAPPU_EARLY_FB_STRIDE
++#define CAPPU_EARLY_FB_STRIDE   6144    /* bytes per line (U: LK may pad) */
++#endif
++
++#ifdef __ASSEMBLER__
++#define CAPPU_EARLY_FB_BLOCK    (CAPPU_EARLY_FB_PHYS & ~0x1ffffff)
++#define CAPPU_EARLY_FB_OFF      (CAPPU_EARLY_FB_PHYS & 0x1ffffff)
++#else
++#define CAPPU_EARLY_FB_BLOCK    (CAPPU_EARLY_FB_PHYS & ~0x1ffffffULL)
++#define CAPPU_EARLY_FB_OFF      (CAPPU_EARLY_FB_PHYS & 0x1ffffffULL)
++#endif
++
++#endif
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+index d4a83b5..7b4ad98 100644
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -35,6 +35,7 @@
+ #include "assym.s"
+ #include <arm64/tunables/tunables.s>
+ #include <arm64/exception_asm.h>
++#include <arm64/cappu_fbparams.h>
+ 
+ #if __ARM_KERNEL_PROTECT__
+ #include <arm/pmap.h>
+@@ -515,12 +516,12 @@ LEXT(start_first_cpu)
+ 	mov		x20, x0
+ 	mov		x21, #0
+ 
+-#if defined(CAPPU)
++#if defined(CAPPU) && (CAPPU_EARLY_FB_PHYS != 0)
+ 	/* Stage 0: white 64x32 band, no stack or page tables needed. */
+-	MOV64	x0, (0x9c000000 + 2368 * 4320)
++	MOV64	x0, (CAPPU_EARLY_FB_PHYS + (CAPPU_EARLY_FB_HEIGHT - 32) * CAPPU_EARLY_FB_STRIDE)
+ 	mov		w1, #-1
+ 	mov		x2, #32
+-	mov		x4, #4320
++	MOV64	x4, CAPPU_EARLY_FB_STRIDE
+ Lcappu_mark_row:
+ 	mov		x3, #64
+ 	mov		x5, x0
+@@ -680,7 +681,7 @@ Lkernelcache_base_found:
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
+ 
+-#if defined(CAPPU)
++#if defined(CAPPU) && (CAPPU_EARLY_FB_PHYS != 0)
+ 	/*
+ 	 * Splash framebuffer: one 32MB Normal-NC block in the EXISTING V=P
+ 	 * L2 table. Both framebuffer and RAM use L1 index 0; another call to
+@@ -688,7 +689,7 @@ Lkernelcache_base_found:
+ 	 * CAPPU uses 16K pages and all bring-up RAM is below 4GB, so the first
+ 	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
+ 	 */
+-	MOV64	x10, 0x9c000000
++	MOV64	x10, CAPPU_EARLY_FB_BLOCK
+ 	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
+ 	orr		x11, x11, x10
+ 	and		x12, x10, #(ARM_TT_L2_INDEX_MASK)

@@ -1,0 +1,261 @@
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -14,8 +14,10 @@
+ 
+ 
+ #if HAS_GIC_V3
++#if !defined(CAPPU_GICV2)
+ #define GICR_WAKE_TIMEOUT_NS (1000000000ULL) // timeout for redistributor wakeup (default 1s)
+ MACHINE_TIMEOUT(gicr_wake_timeout_ns, "gicr-wake-timeout", GICR_WAKE_TIMEOUT_NS, MACHINE_TIMEOUT_UNIT_NSEC, NULL);
++#endif
+ 
+ #if defined(CAPPU)
+ /* Phone default; QEMU virt wires the architected virtual timer to INTID 27. */
+@@ -32,11 +34,13 @@
+ 	return *((volatile uint32_t *) addr);
+ }
+ 
++#if !defined(CAPPU_GICV2)
+ static uint64_t
+ _gic_read64(vm_offset_t addr)
+ {
+ 	return *((volatile uint64_t *) addr);
+ }
++#endif
+ 
+ static void
+ _gic_write32(vm_offset_t addr, uint32_t value)
+@@ -50,6 +54,38 @@
+ #define gicr_write32(offset, data) (_gic_write32(gicr_pe_base + (offset), (data)))
+ #define gicr_read64(offset) (_gic_read64(gicr_pe_base + (offset)))
+ 
++#if defined(CAPPU_GICV2)
++/* GICv2: gicr_base/gicr_size hold the CPU interface (GICC) region of the "reg" property. */
++#define gicc_read32(offset) (_gic_read32(gicr_base + (offset)))
++#define gicc_write32(offset, data) (_gic_write32(gicr_base + (offset), (data)))
++
++/* Interface bit of each logical CPU, read from GICD_ITARGETSR0 on that CPU. UNVERIFIED mapping. */
++static uint32_t cappu_gic_cpumask[MAX_CPUS];
++
++uint32_t
++cappu_gic_ack(void)
++{
++	return gicc_read32(GICC_IAR);
++}
++
++void
++cappu_gic_eoi(uint32_t iar)
++{
++	gicc_write32(GICC_EOIR, iar);
++}
++
++void
++cappu_gic_send_sgi(unsigned int logical_cpu, unsigned int sgi)
++{
++	uint32_t mask = (logical_cpu < MAX_CPUS) ? cappu_gic_cpumask[logical_cpu] : 0;
++	if (mask == 0) {
++		/* Target has not run pe_init_fiq yet: assume interface N = logical CPU N. UNVERIFIED. */
++		mask = 1U << (logical_cpu & 7);
++	}
++	/* TargetListFilter 0, CPUTargetList = mask, NSATT = 1 (Group 1) */
++	gicd_write32(GICD_SGIR, (mask << 16) | (1U << 15) | (sgi & 0xF));
++}
++#else
+ static vm_offset_t
+ find_gicr_pe_base()
+ {
+@@ -72,6 +108,7 @@
+ 
+ 	panic("%s: cannot find GICR base for core %u", __func__, ml_get_cpu_number(phys_id));
+ }
++#endif /* CAPPU_GICV2 */
+ 
+ void
+ pe_init_fiq()
+@@ -143,6 +180,34 @@
+ 		gicr_size = gicr_size_prop;
+ 	}
+ 
++#if defined(CAPPU_GICV2)
++	/*
++	 * GIC-400: PPI/SGI registers are banked per CPU inside the distributor and the
++	 * CPU interface is memory mapped, so there is no redistributor to find or wake.
++	 * Non-secure writes to GICD_IGROUPR0 may be ignored (secure firmware owns the
++	 * grouping); delivery of the arch timer PPI as an IRQ is expected, UNVERIFIED.
++	 */
++	gicd_write32(GICD_IGROUPR0, 0xFFFFFFFF);
++	for (unsigned int i = 0; i < 32; i += 4) {
++		gicd_write32(GICD_IPRIORITYR0 + i, 0xA0A0A0A0);
++	}
++	gicd_write32(GICD_ISENABLER0, (1U << cappu_vtimer_intid) | (1U << CAPPU_IPI_SGI));
++	{
++		unsigned int cpu = ml_get_cpu_number_local();
++		if (cpu < MAX_CPUS) {
++			cappu_gic_cpumask[cpu] = gicd_read32(GICD_ITARGETSR0) & 0xFF;
++		}
++	}
++	gicc_write32(GICC_PMR, 0xFF);
++	gicc_write32(GICC_BPR, 0);
++	gicd_write32(GICD_CTLR, gicd_read32(GICD_CTLR) | GICD_CTLR_ENABLEGRP1);
++	gicc_write32(GICC_CTLR, GICC_CTLR_ENABLEGRP1);
++	__builtin_arm_dsb(DSB_SY);
++	__builtin_arm_isb(ISB_SY);
++	kprintf("CAPPU GIC: GICv2 CPU%u iface mask 0x%x\n", ml_get_cpu_number_local(),
++	    cappu_gic_cpumask[ml_get_cpu_number_local() < MAX_CPUS ? ml_get_cpu_number_local() : 0]);
++#else /* !CAPPU_GICV2 */
++
+ 	// Find the redistributor for this processor
+ 	vm_offset_t gicr_pe_base = find_gicr_pe_base();
+ 
+@@ -221,6 +286,7 @@
+ 	__builtin_arm_wsr64("ICC_IGRPEN0_EL1", 1);
+ 	__builtin_arm_isb(ISB_SY);
+ #endif /* CAPPU */
++#endif /* CAPPU_GICV2 */
+ }
+ #else
+ void
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1861,8 +1861,15 @@
+ 	 * cappu: TrustZone owns GIC Group 0, so the timer and IPIs that other
+ 	 * ARM64 targets take as FIQs arrive here as Group 1 IRQs.
+ 	 */
++#if defined(CAPPU_GICV2)
++	uint32_t iar = cappu_gic_ack();
++	uint32_t intid = iar & GIC_INTID_MASK;
++#define CAPPU_EOI(v) cappu_gic_eoi(v)
++#else
+ 	uint64_t iar = __builtin_arm_rsr64("ICC_IAR1_EL1");
+ 	uint32_t intid = (uint32_t)(iar & 0xFFFFFF);
++#define CAPPU_EOI(v) __builtin_arm_wsr64("ICC_EOIR1_EL1", (v))
++#endif
+ 
+ 	if (intid >= 1020 && intid <= 1023) {
+ 		return; /* spurious */
+@@ -1873,11 +1880,11 @@
+ 		INTERRUPT_MASKED_DEBUG_START(rtclock_intr, DBG_INTR_TYPE_TIMER);
+ 		rtclock_intr(TRUE);
+ 		INTERRUPT_MASKED_DEBUG_END();
+-		__builtin_arm_wsr64("ICC_EOIR1_EL1", iar);
++		CAPPU_EOI(iar);
+ 	} else if (intid < 16) {
+ 		sleh_interrupt_handler_prologue(state, DBG_INTR_TYPE_IPI);
+ 		/* Ack before handling so an IPI raised meanwhile is not lost */
+-		__builtin_arm_wsr64("ICC_EOIR1_EL1", iar);
++		CAPPU_EOI(iar);
+ 		__builtin_arm_isb(ISB_SY);
+ 		cpu_signal_handler();
+ 	} else {
+@@ -1888,7 +1895,7 @@
+ 			    cdp->interrupt_nub,
+ 			    intid);
+ 		}
+-		__builtin_arm_wsr64("ICC_EOIR1_EL1", iar);
++		CAPPU_EOI(iar);
+ 	}
+ 	__builtin_arm_isb(ISB_SY);
+ #else
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -306,11 +306,13 @@
+ 	mov		x1, #3
+ 	msr		CNTHCTL_EL2, x1
+ 	msr		CNTVOFF_EL2, xzr
++#if !defined(CAPPU_GICV2)
+ 	/* Permit ICC_SRE_EL1 and GIC CPU interface system-register access. */
+ 	mrs		x1, ICC_SRE_EL2
+ 	orr		x1, x1, #1
+ 	orr		x1, x1, #8
+ 	msr		ICC_SRE_EL2, x1
++#endif /* !CAPPU_GICV2: GICv2 has no ICC_* registers (UNDEFINED on A72) */
+ 	/* Known Armv8 SCTLR RES1 bits, M/C/I off, little endian. */
+ 	MOV64	x1, 0x30d00800
+ 	msr		SCTLR_EL1, x1
+diff --git a/iokit/Kernel/arm/CappuCPU.cpp b/iokit/Kernel/arm/CappuCPU.cpp
+--- a/iokit/Kernel/arm/CappuCPU.cpp
++++ b/iokit/Kernel/arm/CappuCPU.cpp
+@@ -19,6 +19,9 @@
+ #include <pexpert/pexpert.h>
+ 
+ extern "C" void cappu_secondary_entry(void);
++#if defined(CAPPU_GICV2)
++extern "C" void cappu_gic_send_sgi(unsigned int logical_cpu, unsigned int sgi);
++#endif
+ extern "C" boolean_t cappu_cpu_signal_is_enabled(unsigned int cpu);
+ 
+ class CappuCPU;
+@@ -214,6 +217,12 @@
+ 	if (logical >= topology->num_cpus) {
+ 		panic("CAPPU CPU: invalid SGI target %u", logical);
+ 	}
++#if defined(CAPPU_GICV2)
++	__builtin_arm_dsb(DSB_ISHST);
++	cappu_gic_send_sgi(logical, CAPPU_IPI_SGI);
++	__builtin_arm_isb(ISB_SY);
++	return;
++#endif
+ 	/* Use the TARGET affinity, including Aff1, never the sender's MPIDR. */
+ 	uint64_t mpidr = topology->cpus[logical].phys_id;
+ 	unsigned int aff0 = mpidr & 0xff;
+diff --git a/pexpert/pexpert/arm64/CAPPU.h b/pexpert/pexpert/arm64/CAPPU.h
+--- a/pexpert/pexpert/arm64/CAPPU.h
++++ b/pexpert/pexpert/arm64/CAPPU.h
+@@ -38,6 +38,13 @@
+ 
+ #define HAS_GIC_V3                1
+ 
++/*
++ * MT8176 (Mi Pad 3): ARM GIC-400 = GICv2, memory-mapped CPU interface, no
++ * redistributors and no ICC_* system registers (Cortex-A72 has none).
++ * pe_fiq.c / sleh.c / CappuCPU.cpp switch on CAPPU_GICV2. UNTESTED on hardware.
++ */
++#define CAPPU_GICV2               1
++
+ #ifndef ASSEMBLER
+ #define PLATFORM_PANIC_LOG_DISABLED
+ #endif /* ! ASSEMBLER */
+@@ -47,7 +54,7 @@
+  * virt, hyp) instead of the usual 13/14/11/10: the virtual timer XNU uses
+  * (CNTV) is INTID 16 + 3 = 19.
+  */
+-#define CAPPU_VTIMER_INTID        19
++#define CAPPU_VTIMER_INTID        27      /* MT8176 dts: PPI 11 -> INTID 16 + 11 */
+ #define CAPPU_IPI_SGI             1       // SGI used for cross-CPU signals
+ 
+ #define GIC_SPURIOUS_IRQ          1023    // IRQ no. for GIC spurious interrupt
+@@ -80,4 +87,18 @@
+ #define ICC_SRE_SRE                             0x1
+ /* End of GICv3 register definitions */
+ 
++/* GICv2 (GIC-400) register definitions; Arm IHI 0048B. PPI/SGI registers are banked per CPU in the distributor. */
++#define GICD_IGROUPR0             0x080
++#define GICD_ISENABLER0           0x100
++#define GICD_IPRIORITYR0          0x400
++#define GICD_ITARGETSR0           0x800   /* read-only for PPI/SGI: this CPU's interface bit */
++#define GICD_SGIR                 0xF00
++#define GICC_CTLR                 0x000
++#define GICC_PMR                  0x004
++#define GICC_BPR                  0x008
++#define GICC_IAR                  0x00C
++#define GICC_EOIR                 0x010
++#define GICC_CTLR_ENABLEGRP1      0x1     /* non-secure view */
++#define GIC_INTID_MASK            0x3FF   /* IAR[9:0]; IAR[12:10] is the SGI source CPU */
++
+ #endif /* ! _PEXPERT_ARM64_CAPPU_H */
+diff --git a/pexpert/pexpert/arm/protos.h b/pexpert/pexpert/arm/protos.h
+--- a/pexpert/pexpert/arm/protos.h
++++ b/pexpert/pexpert/arm/protos.h
+@@ -38,6 +38,9 @@
+ void pe_init_fiq(void);
+ #if defined(ARM64_BOARD_CONFIG_CAPPU)
+ extern uint32_t cappu_vtimer_intid;
++extern uint32_t cappu_gic_ack(void);
++extern void cappu_gic_eoi(uint32_t iar);
++extern void cappu_gic_send_sgi(unsigned int logical_cpu, unsigned int sgi);
+ #endif
+ 
+ #ifdef PRIVATE
