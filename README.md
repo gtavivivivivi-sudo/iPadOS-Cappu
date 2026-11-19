@@ -51,13 +51,7 @@
 ## Запуск
 
 ```
-python cappu.py                 # меню
-python cappu.py doctor          # какие инструменты есть
-python cappu.py qemu            # собрать шим M1 и прогнать в QEMU
-python cappu.py image --ref twrp.img   # собрать образы M1 (dist/)
-python cappu.py report          # данные о планшете, только чтение
-python cappu.py tablet          # пошаговый fastboot boot, ничего не прошивает
-python cappu.py fetch           # скачать последнее ядро из Actions + проверка LSE
+python cappu.py                 # меню, там выбор
 ```
 
 Нужны Python 3 и LLVM (`clang`, `ld.lld`, `llvm-objcopy`); для `qemu` ещё `qemu-system-aarch64`; для `tablet` `adb` и `fastboot`.
