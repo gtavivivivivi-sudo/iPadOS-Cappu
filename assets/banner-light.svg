@@ -1,60 +1,29 @@
-<svg width="1000" height="220" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg">
+<svg width="1000" height="240" viewBox="0 0 1000 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="iPadOS-Cappu">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#e6e1ff"/>
-      <stop offset="55%" stop-color="#d2ecff"/>
-      <stop offset="100%" stop-color="#d4f7e8"/>
+    <linearGradient id="bgb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8faff"/><stop offset="0.55" stop-color="#eef0ff"/><stop offset="1" stop-color="#e6f6fb"/>
     </linearGradient>
-    <radialGradient id="glowA" cx="0.85" cy="0.1" r="0.55"><stop offset="0%" stop-color="#c4b5fd" stop-opacity="0.55"/><stop offset="100%" stop-color="#c4b5fd" stop-opacity="0"/></radialGradient>
-    <radialGradient id="glowB" cx="0.1" cy="1" r="0.6"><stop offset="0%" stop-color="#67e8f9" stop-opacity="0.45"/><stop offset="100%" stop-color="#67e8f9" stop-opacity="0"/></radialGradient>
-    <radialGradient id="glowC" cx="0.6" cy="1.05" r="0.35"><stop offset="0%" stop-color="#fde68a" stop-opacity="0.30"/><stop offset="100%" stop-color="#fde68a" stop-opacity="0"/></radialGradient>
-    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#06b6d4"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
-    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
-      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#312e81" stroke-opacity="0.06" stroke-width="1"/>
-    </pattern>
-    <clipPath id="round"><rect width="1000" height="220" rx="14"/></clipPath>
+    <radialGradient id="gab" cx="0.9" cy="0.05" r="0.6"><stop offset="0" stop-color="#a5b4fc" stop-opacity="0.45"/><stop offset="1" stop-color="#a5b4fc" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gbb" cx="0.05" cy="1" r="0.6"><stop offset="0" stop-color="#67e8f9" stop-opacity="0.30"/><stop offset="1" stop-color="#67e8f9" stop-opacity="0"/></radialGradient>
+    <pattern id="dotsb" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#1e1b4b" fill-opacity="0.08"/></pattern>
+    <clipPath id="rb"><rect width="1000" height="240" rx="18"/></clipPath>
   </defs>
-  <g clip-path="url(#round)">
-    <rect width="1000" height="220" fill="url(#bg)"/>
-    <rect width="1000" height="220" fill="url(#glowA)"/>
-    <rect width="1000" height="220" fill="url(#glowB)"/>
-    <rect width="1000" height="220" fill="url(#glowC)"/>
-    <rect width="1000" height="220" fill="url(#grid)"/>
-    <rect x="0" y="0" width="1000" height="4" fill="url(#bar)"/>
-    <rect x="0" y="216" width="1000" height="4" fill="url(#bar)"/>
+  <g clip-path="url(#rb)">
+    <rect width="1000" height="240" fill="url(#bgb)"/>
+    <rect width="1000" height="240" fill="url(#gab)"/>
+    <rect width="1000" height="240" fill="url(#gbb)"/>
+    <rect width="1000" height="240" fill="url(#dotsb)"/>
   </g>
-
-  <!-- stylized chip / soc -->
-  <g transform="translate(60,58)">
-    <rect x="0" y="0" width="100" height="100" rx="8" fill="rgba(255,255,255,0.06)" stroke="#6366f1" stroke-width="2"/>
-    <rect x="16" y="16" width="68" height="68" rx="4" fill="rgba(255,255,255,0.7)" stroke="#0f766e" stroke-width="1.5"/>
-    <text x="50" y="55" font-family="Consolas,Menlo,monospace" font-size="13" fill="#0f766e" text-anchor="middle">MT8176</text>
-    <text x="50" y="70" font-family="Consolas,Menlo,monospace" font-size="9" fill="#3b4a78" text-anchor="middle">ARMv8.0</text>
-    <g stroke="#6366f1" stroke-width="2" stroke-linecap="round">
-      <line x1="-12" y1="20" x2="0" y2="20"/>
-      <line x1="100" y1="20" x2="112" y2="20"/>
-      <line x1="20" y1="-12" x2="20" y2="0"/>
-      <line x1="20" y1="100" x2="20" y2="112"/>
-      <line x1="-12" y1="40" x2="0" y2="40"/>
-      <line x1="100" y1="40" x2="112" y2="40"/>
-      <line x1="40" y1="-12" x2="40" y2="0"/>
-      <line x1="40" y1="100" x2="40" y2="112"/>
-      <line x1="-12" y1="60" x2="0" y2="60"/>
-      <line x1="100" y1="60" x2="112" y2="60"/>
-      <line x1="60" y1="-12" x2="60" y2="0"/>
-      <line x1="60" y1="100" x2="60" y2="112"/>
-      <line x1="-12" y1="80" x2="0" y2="80"/>
-      <line x1="100" y1="80" x2="112" y2="80"/>
-      <line x1="80" y1="-12" x2="80" y2="0"/>
-      <line x1="80" y1="100" x2="80" y2="112"/>
-    </g>
+  <g transform="translate(46,10)">
+    <path d="M40 80 H58 M162 80 H180 M80 40 V58 M80 162 V180" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round"/><path d="M40 100 H58 M162 100 H180 M100 40 V58 M100 162 V180" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round"/><path d="M40 120 H58 M162 120 H180 M120 40 V58 M120 162 V180" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round"/><path d="M40 140 H58 M162 140 H180 M140 40 V58 M140 162 V180" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round"/>
+    <rect x="58" y="58" width="104" height="104" rx="14" fill="#ffffff" stroke="#4f46e5" stroke-width="3"/>
+    <rect x="76" y="80" width="68" height="60" rx="8" fill="#eef2ff" stroke="#0891b2" stroke-width="2.5"/>
+    <text x="110" y="107" text-anchor="middle" font-family="'SFMono-Regular', Consolas, Menlo, 'Liberation Mono', monospace" font-size="16" font-weight="700" fill="#0f172a">MT8176</text>
+    <text x="110" y="127" text-anchor="middle" font-family="'SFMono-Regular', Consolas, Menlo, 'Liberation Mono', monospace" font-size="12" fill="#475569">ARMv8.0</text>
   </g>
-
-  <g font-family="Consolas,Menlo,monospace">
-    <text x="210" y="100" font-size="44" font-weight="bold" fill="#1e1b4b">iPadOS-Cappu</text>
-    <text x="212" y="130" font-size="16" fill="#0f766e">$ настоящая iPadOS 16.6.1 на Xiaomi Mi Pad 3</text>
-    <text x="212" y="155" font-size="12" fill="#3b4a78">XNU 8796.141.3 (patched) + нетронутый userland Apple + свой boot-шим</text>
-  </g>
-
-  <text x="940" y="205" font-family="Consolas,Menlo,monospace" font-size="11" fill="#4f46e5" text-anchor="end">alpha 0.1 // cappu</text>
+  <text x="290" y="108" font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="62" font-weight="800" fill="#0f172a" letter-spacing="-1">iPadOS-Cappu</text>
+  <text x="292" y="150" font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="500" fill="#1e293b">iPadOS 16.6.1 на Xiaomi Mi Pad 3</text>
+  <text x="292" y="188" font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="18" fill="#475569">патченный XNU 8796 · нетронутый userland Apple · свой boot-шим</text>
+  <rect x="824" y="26" width="150" height="38" rx="19" fill="#4f46e5" fill-opacity="0.10" stroke="#4f46e5" stroke-opacity="0.55" stroke-width="1.5"/>
+  <text x="899" y="51" text-anchor="middle" font-family="'SFMono-Regular', Consolas, Menlo, 'Liberation Mono', monospace" font-size="16" font-weight="700" fill="#3730a3">ALPHA 0.1</text>
 </svg>
