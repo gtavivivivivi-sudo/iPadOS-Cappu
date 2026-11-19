@@ -1,6 +1,6 @@
 /* Output: UART always, framebuffer text console when /chosen gave us an address. */
 #include "plat.h"
-#include "../font.h"
+#include "font.h"
 
 #define SCALE 2
 static volatile uint32_t *fb;

@@ -7,7 +7,7 @@
  * Builds for QEMU virt with -DPLAT_QEMU. UNTESTED ON REAL HARDWARE.
  */
 #include "plat.h"
-#include "../gicv2.h"
+#include "gicv2.h"
 
 /* CNTFRQ_EL0 may be 0 if firmware did not program it for EL1; 13 MHz is the usual MTK value (U). Without this guard the
  * wait loops end at once and the tablet would reset instantly, which looks the same as "LK rejected the image". */

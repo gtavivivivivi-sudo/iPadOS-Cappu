@@ -6,7 +6,7 @@ image of the tablet, `--ref`), replaces the kernel with our shim and the ramdisk
 cpio. Kernel blob = gzip(Image) + DTB, same layout as the reference (Image.gz-dtb).
 FOR `fastboot boot` ONLY. Never flash the result to boot/recovery.
 
-  python3 tools/mkboot_mt8176.py --ref twrp.img --shim shim/mt8176/out/Image -o m1-boot.img [--raw]
+  python3 tools/mkboot_mt8176.py --ref twrp.img --shim shim/out/Image -o m1-boot.img [--raw]
 """
 import argparse, gzip, struct, sys
 

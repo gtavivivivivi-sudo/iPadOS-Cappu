@@ -71,9 +71,9 @@ jobs:
           # file) - xcconfig's own KEY[arch=value] qualifier syntax handles this correctly, and
           # $(OTHER_CFLAGS) makes the arm64-only line inherit the project's base flags
           # (-mkernel -nostdinc -Wno-packed) instead of replacing them. See
-          # tools/ci/patch_dxb_firehose_nolse.py for the full why (kept out of this YAML
+          # tools/patch_dxb_firehose_nolse.py for the full why (kept out of this YAML
           # because a heredoc here breaks the block-scalar indentation - already hit that once).
-          python3 tools/ci/patch_dxb_firehose_nolse.py dxb/build.sh
+          python3 tools/patch_dxb_firehose_nolse.py dxb/build.sh
           grep -n "OTHER_CFLAGS\[arch=arm64\]" dxb/build.sh
           ls dxb/patches
 

@@ -17,7 +17,7 @@ M1 is a diagnostic shim, NOT iPadOS. Nothing here has run on the tablet yet.
 import argparse, os, pathlib, shutil, subprocess, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
-SHIM = ROOT / "shim" / "mt8176"
+SHIM = ROOT / "shim"
 DIST = ROOT / "dist"
 
 

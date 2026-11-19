@@ -66,7 +66,7 @@ python cappu.py fetch           # скачать последнее ядро и�
 
 ```
 patches/     патчи XNU 8796 (86 шт., 0082-0086 под MT8176)
-shim/        диагностический boot-шим M1 (shim/mt8176)
+shim/        диагностический boot-шим M1 (MT8176)
 tools/       генератор device tree, сборка boot-образов, сканер LSE, ipsw_fetch.py
 research/    device tree iPad7,11 и данные из IPSW
 dist/        готовые образы M1 (только для fastboot boot)
